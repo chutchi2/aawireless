@@ -1,16 +1,17 @@
-use std;
+use std::{self, ptr::null};
+use crate::aawireless::configuration::*;
 
-struct WifiHotspot {
+pub struct WifiHotspot {
     ioService: &boost::asio::io_context,
-    configuration: &aawireless::configuration::Configuration,
-    password: std::string
+    configuration: &Configuration::Configuration,
+    password: String
 }
 
 impl WifiHotspot {
     pub fn new(
         ioService: &boost::asio::io_context,
-        configuration: &aawireless::configuration::Configuration,
-        password: std::string
+        configuration: &Configuration::Configuration,
+        password: String
     ) -> Self {
         Self {
             ioService: ioService,
@@ -19,24 +20,24 @@ impl WifiHotspot {
         }
     }
     
-    pub fn start() {
+    pub fn start(&self) {
         AW_LOG(info) << "Starting hotspot";
     
-        let settings: auto = std::make_unique<ConnectionSettings>(ConnectionSettings::Wireless);
+        let settings = std::make_unique<ConnectionSettings>(ConnectionSettings::Wireless);
     
         let mut wifiDevice: WirelessDevice::Ptr;
-        let deviceName: auto = QString::fromStdString(configuration.wifiDevice);
+        let deviceName = QString::fromStdString(self.configuration.wifiDevice);
         let deviceList: Device::List = NetworkManager::networkInterfaces();
     
-        if (!configuration.wifiDevice.empty()) {
+        if (!self.configuration.wifiDevice.empty()) {
             for dev in deviceList {
                 if (dev.type() == Device::Wifi && dev.interfaceName() == deviceName) {
                     wifiDevice = qobject_cast<WirelessDevice *>(dev);
                     break;
                 }
             }
-            if (wifiDevice == nullptr) {
-                AW_LOG(error) << "Wireless device " << configuration.wifiDevice << " not found!";
+            if (wifiDevice == ptr:null()) {
+                AW_LOG(error) << "Wireless device " << self.configuration.wifiDevice << " not found!";
                 return;
             }
         } else {
@@ -54,32 +55,32 @@ impl WifiHotspot {
             return;
         }
     
-        let ssid: auto = QString::fromStdString(configuration.wifiSSID);
+        let ssid = QString::fromStdString(self.configuration.wifiSSID);
         // Now we will prepare our new connection, we have to specify ID and create new UUID
         settings.setId(ssid);
         settings.setUuid(QUuid::createUuid().toString().mid(1, QUuid::createUuid().toString().length() - 2));
         settings.setAutoconnect(false);
     
         // For wireless setting we have to specify SSID
-        let wirelessSetting: auto = settings.setting(Setting::Wireless).dynamicCast<WirelessSetting>();
+        let wirelessSetting = settings.setting(Setting::Wireless).dynamicCast<WirelessSetting>();
         wirelessSetting.setSsid(ssid.toUtf8());
         wirelessSetting.setMode(WirelessSetting::NetworkMode::Ap);
     
-        let ipv4Setting: auto = settings.setting(Setting::Ipv4).dynamicCast<Ipv4Setting>();
+        let ipv4Setting = settings.setting(Setting::Ipv4).dynamicCast<Ipv4Setting>();
         ipv4Setting.setMethod(NetworkManager::Ipv4Setting::Shared);
         ipv4Setting.setInitialized(true);
     
         // Optional password setting. Can be skipped if you do not need encryption.
-        let wifiSecurity: auto = settings.setting(Setting::WirelessSecurity).dynamicCast<WirelessSecuritySetting>();
+        let wifiSecurity = settings.setting(Setting::WirelessSecurity).dynamicCast<WirelessSecuritySetting>();
         wifiSecurity.setKeyMgmt(WirelessSecuritySetting::WpaPsk);
-        wifiSecurity.setPsk(QString::fromStdString(password));
+        wifiSecurity.setPsk(QString::fromStdString(self.password));
         wifiSecurity.setInitialized(true);
     
         wirelessSetting.setSecurity("802-11-wireless-security");
         wirelessSetting.setInitialized(true);
     
         // We try to add and activate our new wireless connection
-        let reply: auto = NetworkManager::addAndActivateConnection(settings.toMap(), wifiDevice.uni(), QString());
+        let reply = NetworkManager::addAndActivateConnection(settings.toMap(), wifiDevice.uni(), QString());
         reply.waitForFinished();
         if (reply.isValid()) {
             AW_LOG(info) << "Created wifi hotspot";

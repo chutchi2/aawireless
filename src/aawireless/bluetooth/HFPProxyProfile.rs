@@ -22,29 +22,29 @@ struct HFPProxyProfile {
 
 impl HFPProxyProfile {
     pub fn new() -> Self {
-
-    }
-    pub fn HFPProxyProfile() {
-        setName(QStringLiteral("HandsfreeProfile"));
-        //setChannel(0);
+        Self {
+            rfcommSocket: QStringLiteral("HandsfreeProfile").get(''),
+            scoSocketServer: QStringLiteral("HandsfreeProfile").get(''),
+            scoSocket: QStringLiteral("HandsfreeProfile").get(''),
+        }
     }
     
-    pub fn objectPath() -> QDBusObjectPath {
+    pub fn objectPath(&self) -> QDBusObjectPath {
         return QDBusObjectPath(QStringLiteral("/HandsfreeProfile"));
     }
     
-    pub fn uuid() -> QString {
+    pub fn uuid(&self) -> QString {
         return QStringLiteral("0000111e-0000-1000-8000-00805f9b34fb"); // HFP profile uuid
     }
     
-    pub fn newConnection(device: BluezQt::DevicePtr, &fd: QDBusUnixFileDescriptor, &properties: QVariantMap, &request: BluezQt::Request<>) {
+    pub fn newConnection(&self, device: BluezQt::DevicePtr, &fd: QDBusUnixFileDescriptor, &properties: QVariantMap, &request: BluezQt::Request<>) {
         AW_LOG(info) << "Creating rfcomm socket";
     
-        if (rfcommSocket) {rfcommSocket.close();}
-        if (scoSocketServer) {scoSocketServer.close();}
+        if (self.rfcommSocket) {self.rfcommSocket.close();}
+        if (self.scoSocketServer) {self.scoSocketServer.close();}
     
-        rfcommSocket = createSocket(fd);
-        if (!rfcommSocket.isValid()) {
+        self.rfcommSocket = createSocket(fd);
+        if (!self.rfcommSocket.isValid()) {
             request.cancel();
             AW_LOG(error) << "HFP profile rfcomm socket invalid!";
             return;
@@ -53,10 +53,10 @@ impl HFPProxyProfile {
         AW_LOG(info) << "Listening for SCO connections";
         let adapterAddress: auto = device.adapter().address();
         let scoFd: i32 = createSCOSocket(adapterAddress);
-        scoSocketServer = QSharedPointer<QLocalServer>(QLocalServer);
-        scoSocketServer.connect(scoSocketServer.data(), &QLocalServer::newConnection, this, &scoNewConnection);
+        self.scoSocketServer = QSharedPointer<QLocalServer>(QLocalServer);
+        self.scoSocketServer.connect(self.scoSocketServer.data(), &QLocalServer::newConnection, this, &self.scoNewConnection);
     
-        if (!scoSocketServer.listen(scoFd)) {
+        if (!self.scoSocketServer.listen(scoFd)) {
             request.cancel();
             AW_LOG(error) << "HFP profile SCO socket invalid!";
             return;
@@ -67,24 +67,24 @@ impl HFPProxyProfile {
         emit onNewRfcommSocket(rfcommSocket);
     }
     
-    pub fn scoNewConnection() {
-        scoSocket = scoSocketServer.nextPendingConnection();
+    pub fn scoNewConnection(&self) {
+        self.scoSocket = self.scoSocketServer.nextPendingConnection();
         AW_LOG(info) << "New SCO connection";
     
-        emit onNewSCOSocket(scoSocket);
+        emit self.onNewSCOSocket(scoSocket);
     }
     
-    pub fn requestDisconnection(device: BluezQt::DevicePtr, &request: BluezQt::Request<>) {
+    pub fn requestDisconnection(&self, device: BluezQt::DevicePtr, &request: BluezQt::Request<>) {
         AW_LOG(info) << "On request disconnection";
         request.accept();
     }
     
-    pub fn release() {
-    //    rfcommSocket.disconnectFromServer();
-    //    rfcommSocket.clear();
+    pub fn release(&self) {
+    //    self.rfcommSocket.disconnectFromServer();
+    //    self.rfcommSocket.clear();
     }
     
-    pub fn createSCOSocket(srcAddress: QString) -> i32 {
+    pub fn createSCOSocket(&self, srcAddress: QString) -> i32 {
         // TODO: move elsewhere
         //    int sock = ::socket(PF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_SCO);
         //    if (sock < 0) {
@@ -134,7 +134,7 @@ impl HFPProxyProfile {
         }
     
         AW_LOG(info) << "Creating SCO socket on " << srcAddress.toStdString();
-        char *src_addr = srcAddress.toLocal8Bit().data();
+        let src_addr: *mut char = srcAddress.toLocal8Bit().data();
         let src: bdaddr_t;
     
         /* don't use ba2str to apub fn -lbluetooth */
@@ -142,7 +142,7 @@ impl HFPProxyProfile {
         while (i >= 0){
             src_addr += 3;
             i -= 1;
-            src.b[i] = strtol(src_addr, NULL, 16);
+            src.b[i] = std::strtol(src_addr, NULL, 16);
         }
         /* Bind to local address */
         impl addr for sockaddr_sco {};

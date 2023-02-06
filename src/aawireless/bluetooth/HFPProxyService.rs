@@ -5,24 +5,27 @@
 // #include <aawireless/log/Log.h>
 // #include <QtBluetooth/QBluetoothSocket>
 
-struct HFPProxyService {
+pub struct HFPProxyService {
     btManager: std::shared_ptr<BluezQt::Manager>,
     hfpProxyProfile: std::shared_ptr<HFPProxyProfile>,
 }
+
 impl HFPProxyService {
     pub fn new(btManager: std::shared_ptr<BluezQt::Manager>) -> Self {
-        btManager(std::move(btManager));
+        Self {
+            btManager: std::move(btManager),
+            hfpProxyProfile: std::ptr::null(),
+        }
     }
     pub fn start(&self) {
-        hfpProxyProfile = std::make_shared<HFPProxyProfile>();
-        BluezQt::PendingCall *call = btManager.registerProfile(hfpProxyProfile.get());
-        connect(call, &BluezQt::PendingCall::finished, this, &onProfileReady);
-        connect(hfpProxyProfile.get(), &HFPProxyProfile::onNewRfcommSocket, this,
-        &newRfcommSocket);
+        self.hfpProxyProfile = std::make_shared<HFPProxyProfile>();
+        let call: *mut BluezQt::PendingCall = self.btManager.registerProfile(hfpProxyProfile.get());
+        connect(call, &BluezQt::PendingCall::finished, this, &self.onProfileReady);
+        connect(hfpProxyProfile.get(), &HFPProxyProfile::onNewRfcommSocket, this, &self.newRfcommSocket);
     }
     
     pub fn stop() {
-        btManager.unregisterProfile(hfpProxyProfile.get());
+        self.btManager.unregisterProfile(hfpProxyProfile.get());
     }
     
     pub fn connectToDevice(&self, address: QString) {

@@ -6,14 +6,14 @@ use std;
 // #include <boost/property_tree/ini_parser.hpp>
 // #include "Database.h"
 
-struct DatabaseX {
-    file: std::string,
-    lastBluetoothDevice: std::string
+pub struct DatabaseX {
+    file: String,
+    lastBluetoothDevice: String
 }
 
 impl DatabaseX {
-    pub fn new(&self, &file: std::string) -> Self {
-        Self{file: file}
+    pub fn new(&self, &file: String) -> Self {
+        Self{file: file, lastBluetoothDevice: ' '}
     }
     pub fn load(&self) {
         let iniConfig: boost::property_tree::ptree;
@@ -21,19 +21,19 @@ impl DatabaseX {
         if (boost::filesystem::exists(self.file)) {
             boost::property_tree::ini_parser::read_ini(self.file, iniConfig);
         }
-        let lastBluetoothDevice = iniConfig.get<std::string>("Bluetooth.LastDevice", std::string());
+        self.lastBluetoothDevice = iniConfig.get<String>("Bluetooth.LastDevice", String());
     }
     
     pub fn save(&self) {
         let iniConfig: boost::property_tree::ptree;
-        if (boost::filesystem::exists(file)) {
+        if (boost::filesystem::exists(self.file)) {
             boost::property_tree::ini_parser::read_ini(self.file, iniConfig);
         }
-        iniConfig.put("Bluetooth.LastDevice", lastBluetoothDevice);
+        iniConfig.put("Bluetooth.LastDevice", self.lastBluetoothDevice);
         boost::property_tree::ini_parser::write_ini(self.file, iniConfig);
     }
     
-    pub fn setLastBluetoothDevice(&mut self, address: std::string) {
+    pub fn setLastBluetoothDevice(&mut self, address: String) {
         self.lastBluetoothDevice = address;
     }
     

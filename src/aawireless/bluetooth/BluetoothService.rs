@@ -1,7 +1,9 @@
 
 use std;
 use google;
-
+use f1x;
+use crate::aawireless::configuration::*;
+use crate::aawireless::database::*;
 // #include <QtBluetooth/QBluetoothServiceInfo>
 // #include "BluetoothService.h"
 // #include <aawireless/log/Log.h>
@@ -14,42 +16,43 @@ use google;
 // #include <QtDBus/QDBusInterface>
 // #include <QtDBus/QDBusReply>
 
-struct BluetoothService {
+
+pub struct BluetoothService {
     localDevice: QBluetoothLocalDevice,
     serviceInfo: QBluetoothServiceInfo,
     server: QBluetoothServer,
     buffer: QByteArray,
     socket: *mut QBluetoothSocket,
-    configuration: &aawireless::configuration::Configuration,
-    database: &aawireless::database::Database,
-    password: std::string,
+    configuration: &Configuration::Configuration,
+    database: &Database::DatabaseX,
+    password: String,
 }
 impl BluetoothService {
     pub fn new(
-        &configuration: aawireless::configuration::Configuration,
-        &database: aawireless::database::Database,
-        password: std::string
+        &configuration: Configuration::Configuration,
+        &database: Database::DatabaseX,
+        password: String
     ) -> Self {
         connect(&server, &QBluetoothServer::newConnection, self, &BluetoothService::onClientConnected);
     }
 
     pub fn start(&self) {
         AW_LOG(info) << "Start listening for bluetooth connections";
-        localDevice.powerOn();
-        localDevice.setHostMode(QBluetoothLocalDevice::HostDiscoverable);
+        self.localDevice.powerOn();
+        self.localDevice.setHostMode(QBluetoothLocalDevice::HostDiscoverable);
     
-        server.listen(localDevice.address());
-        registerService(server.serverPort());
+        self.server.listen(self.localDevice.address());
+        self.registerService(self.server.serverPort());
     
-        if (!database.getLastBluetoothDevice().empty()) {
-            connectDevice(database.getLastBluetoothDevice());
+        if (!self.database.getLastBluetoothDevice().empty()) {
+            self.connectDevice(self.database.getLastBluetoothDevice());
         }
     }
 
-    fn connectDevice(&self, address: std::string) {
+    fn connectDevice(&self, address: String) {
         AW_LOG(info) << "Connecting to " << address;
         std::replace(address.begin(), address.end(), ':', '_');
-        let iface = QDBusInterface("org.bluez",std::string("/org/bluez/hci0/dev_").append(address).c_str(), "org.bluez.Device1", QDBusConnection::systemBus());
+        let iface = QDBusInterface("org.bluez",String("/org/bluez/hci0/dev_").append(address).c_str(), "org.bluez.Device1", QDBusConnection::systemBus());
         if (iface.isValid()) {
             QDBusReply<void> reply = iface.call("Connect");
             if (!reply.isValid()) {
@@ -65,47 +68,47 @@ impl BluetoothService {
     }
     
     pub fn onClientConnected(&self) {
-        if (socket != nullptr) {
-            socket.deleteLater();
+        if (self.socket != std::ptr::null()) {
+            self.socket.deleteLater();
         }
     
-        socket = server.nextPendingConnection();
+        self.socket = server.nextPendingConnection();
     
-        database.setLastBluetoothDevice(socket.peerAddress().toString().toStdString());
-        database.save();
+        self.database.setLastBluetoothDevice(self.socket.peerAddress().toString().toStdString());
+        self.database.save();
     
-        if (socket != nullptr) {
+        if (self.socket != std::ptr::null()) {
             AW_LOG(info) << "[AndroidBluetoothServer] rfcomm client connected, peer name: " << socket.peerName().toStdString();
     
-            connect(socket, &QBluetoothSocket::readyRead, this, &BluetoothService::readSocket);
+            self.connect(socket, &QBluetoothSocket::readyRead, this, &BluetoothService::readSocket);
             //  connect(socket, &QBluetoothSocket::disconnected, this, QOverload<>::of(&ChatServer::clientDisconnected));
     
             let request: f1x::aasdk::proto::messages::WifiInfoRequest;
-            request.set_ip_address(configuration.wifiIpAddress);
-            request.set_port(configuration.wifiPort);
+            request.set_ip_address(self.configuration.wifiIpAddress);
+            request.set_port(self.configuration.wifiPort);
     
-            sendMessage(request, 1);
+            self.sendMessage(request, 1);
         } else {
             AW_LOG(error) << "received null socket during client connection.";
         }
     }
     
     fn readSocket(&self) {
-        buffer += socket.readAll();
+        self.buffer += self.socket.readAll();
     
         AW_LOG(info) << "Received message";
     
-        if (buffer.length() < 4) {
+        if (self.buffer.length() < 4) {
             AW_LOG(debug) << "Not enough data, waiting for more";
             return;
         }
     
-        let stream = QDataStream(buffer);
+        let stream = QDataStream(self.buffer);
         let mut length: u16;
         stream >> length;
     
-        if (buffer.length() < length + 4) {
-            AW_LOG(info) << "Not enough data, waiting for more: " << buffer.length();
+        if (self.buffer.length() < length + 4) {
+            AW_LOG(info) << "Not enough data, waiting for more: " << self.buffer.length();
             return;
         }
     
@@ -116,15 +119,15 @@ impl BluetoothService {
     
         match messageId {
             1=>
-                handleWifiInfoRequest(buffer, length),
+                self.handleWifiInfoRequest(buffer, length),
             2=>
-                handleWifiSecurityRequest(buffer, length),
+                self.handleWifiSecurityRequest(buffer, length),
             7=>
-                handleWifiInfoRequestResponse(buffer, length),
+                self.handleWifiInfoRequestResponse(buffer, length),
             _=> {
                 let ss: std::stringstream;
                 ss << std::hex << std::setfill('0');
-                for val in buffer {
+                for val in self.buffer {
                     ss << std::setw(2) << static_cast<unsigned>(val);
                 }
                 AW_LOG(info) << "Unknown message: " << messageId;
@@ -132,33 +135,33 @@ impl BluetoothService {
             }
         }
     
-        buffer = buffer.mid(length + 4);
+        self.buffer = self.buffer.mid(length + 4);
     }
     
-    fn handleWifiInfoRequest(&self, &buffer: QByteArray, length: uint16_t) {
+    fn handleWifiInfoRequest(&self, &buffer: QByteArray, length: u16) {
         let msg: f1x::aasdk::proto::messages::WifiInfoRequest;
         msg.ParseFromArray(buffer.data() + 4, length);
         AW_LOG(info) << "WifiInfoRequest: " << msg.DebugString();
     
         let response: f1x::aasdk::proto::messages::WifiInfoResponse;
-        response.set_ip_address(configuration.wifiIpAddress);
-        response.set_port(configuration.wifiPort);
+        response.set_ip_address(self.configuration.wifiIpAddress);
+        response.set_port(self.configuration.wifiPort);
         response.set_status(f1x::aasdk::proto::messages::WifiInfoResponse_Status_STATUS_SUCCESS);
     
-        sendMessage(response, 7);
+        self.sendMessage(response, 7);
     }
     
-    fn handleWifiSecurityRequest(&self, &buffer: QByteArray, length: uint16_t) {
+    fn handleWifiSecurityRequest(&self, &buffer: QByteArray, length: u16) {
         let response: f1x::aasdk::proto::messages::WifiSecurityReponse;
     
-        response.set_ssid(configuration.wifiSSID);
-        response.set_bssid(configuration.wifiBSSID);
-        response.set_key(configuration.wifiPassphrase);
+        response.set_ssid(self.configuration.wifiSSID);
+        response.set_bssid(self.configuration.wifiBSSID);
+        response.set_key(self.configuration.wifiPassphrase);
         response.set_security_mode(
         f1x::aasdk::proto::messages::WifiSecurityReponse_SecurityMode_WPA2_PERSONAL); //TODO: make configurable?
         response.set_access_point_type(f1x::aasdk::proto::messages::WifiSecurityReponse_AccessPointType_STATIC);
     
-        sendMessage(response, 3);
+        self.sendMessage(response, 3);
     }
     
     fn sendMessage(&self, &message: google::protobuf::Message, sm_type: u16) {
@@ -176,7 +179,7 @@ impl BluetoothService {
         }
         AW_LOG(info) << "Writing message: " << ss.str();
     
-        let written: auto = socket.write(out);
+        let written = self.socket.write(out);
         if (written > -1) {
             AW_LOG(info) << "Bytes written: " << written;
         } else {
@@ -195,33 +198,31 @@ impl BluetoothService {
     
         let classId: QBluetoothServiceInfo::Sequence;
         classId << QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::SerialPort));
-        serviceInfo.setAttribute(QBluetoothServiceInfo::BluetoothProfileDescriptorList, classId);
+        self.serviceInfo.setAttribute(QBluetoothServiceInfo::BluetoothProfileDescriptorList, classId);
         classId.prepend(QVariant::fromValue(serviceUuid));
-        serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceClassIds, classId);
-        serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceName, "AAWireless Bluetooth Service");
-        serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceDescription,
-        "AndroidAuto WiFi projection automatic setup");
-        serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceProvider, "AAWireless");
-        serviceInfo.setServiceUuid(serviceUuid);
+        self.serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceClassIds, classId);
+        self.serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceName, "AAWireless Bluetooth Service");
+        self.serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceDescription, "AndroidAuto WiFi projection automatic setup");
+        self.serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceProvider, "AAWireless");
+        self.serviceInfo.setServiceUuid(serviceUuid);
     
         let publicBrowse: QBluetoothServiceInfo::Sequence;
         publicBrowse << QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::PublicBrowseGroup));
-        serviceInfo.setAttribute(QBluetoothServiceInfo::BrowseGroupList, publicBrowse);
+        self.serviceInfo.setAttribute(QBluetoothServiceInfo::BrowseGroupList, publicBrowse);
     
         let protocolDescriptorList: QBluetoothServiceInfo::Sequence ;
         let protocol: QBluetoothServiceInfo::Sequence;
         protocol << QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::L2cap));
         protocolDescriptorList.append(QVariant::fromValue(protocol));
         protocol.clear();
-        protocol << QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::Rfcomm))
-        << QVariant::fromValue(port);
+        protocol << QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::Rfcomm)) << QVariant::fromValue(port);
         protocolDescriptorList.append(QVariant::fromValue(protocol));
-        serviceInfo.setAttribute(QBluetoothServiceInfo::ProtocolDescriptorList, protocolDescriptorList);
+        self.serviceInfo.setAttribute(QBluetoothServiceInfo::ProtocolDescriptorList, protocolDescriptorList);
     
-        serviceInfo.registerService(localDevice.address());
+        self.serviceInfo.registerService(self.localDevice.address());
     }
     
-    pub fn getAddress(&self) -> std::string {
-        return localDevice.address().toString().toStdString();
+    pub fn getAddress(&self) -> String {
+        return self.localDevice.address().toString().toStdString();
     }
 }

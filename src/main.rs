@@ -24,32 +24,42 @@
 // #include <BluezQt/PendingCall>
 // #include <aawireless/bluetooth/HFPProxyProfile.h>
 // #include <aawireless/bluetooth/HFPProxyService.h>
+mod aawireless;
+use crate::aawireless::bluetooth::*;
+use crate::aawireless::connection::*;
+use crate::aawireless::configuration::*;
+use crate::aawireless::wifi::*;
+use crate::aawireless::database::*;
+// use crate::aawireless::App;
+use std::{vec, ptr::null};
+use boost;
+use f1x;
 
-using ThreadPool = std::vector<std::thread>;
+// using ThreadPool = std::Vec<std::thread>;
 
-pub fn startUSBWorkers(&ioService: boost::asio::io_service, usbContext: *mut libusb_context , threadPool: &ThreadPool) {
-    let usbWorker: auto = [&ioService, usbContext]() {
-        timeval libusbEventTimeout{180, 0};
+pub fn startUSBWorkers(&ioService: boost::asio::io_service, usbContext: *mut libusb_context, threadPool: &Vec<std::thread::Thread>) {
+    fn usbWorker(ioService: &boost::asio::io_service, usbContext: *mut libusb_context) {
+        let libusbEventTimeout = timeval{180, 0};
 
         while (!ioService.stopped()) {
-            libusb_handle_events_timeout_completed(usbContext, &libusbEventTimeout, nullptr);
+            libusb_handle_events_timeout_completed(usbContext, &libusbEventTimeout, null);
         }
-    };
+    }
 
-    threadPool.emplace_back(std::thread(usbWorker));
+    threadPool.emplace_back(std::thread::Thread(usbWorker));
 }
 
-pub fn startIOServiceWorkers(&ioService: boost::asio::io_service, threadPool: &ThreadPool) {
-    let ioServiceWorker: auto = [&ioService]() {
+pub fn startIOServiceWorkers(&ioService: boost::asio::io_service, threadPool: &Vec<std::thread::Thread>) {
+    fn ioServiceWorker (&ioService: boost::asio::io_service) {
         ioService.run();
     };
 
-    threadPool.emplace_back(std::thread(ioServiceWorker));
+    threadPool.emplace_back(std::thread::Thread(ioServiceWorker));
 }
 
 //TODO: refactor to other location
-pub fn generatePassword() -> std::string {
-    let chars = std::string(
+pub fn generatePassword() -> std::string::String {
+    let chars = std::string::String(
             "abcdefghijklmnopqrstuvwxyz",
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "1234567890",
@@ -84,37 +94,37 @@ pub fn main(argc: int, argv: *mut Vec<char>) -> i32 {
 
     let mut ioService: boost::asio::io_service;
     let work = boost::asio::io_service::work(ioService);
-    let mut threadPool: std::vector<std::thread>;
+    let mut threadPool: Vec<std::thread::Thread>;
     startUSBWorkers(ioService, usbContext, threadPool);
     startIOServiceWorkers(ioService, threadPool);
 
     let qApplication = QCoreApplication(argc, argv);
 
-    let password: std::string = generatePassword();
+    let password: std::string::String = generatePassword();
     AW_LOG(info) << "Wifi password " << password;
 
-    let configuration = aawireless::configuration::Configuration("config.ini");
-    let database = aawireless::database::Database("/var/lib/aawireless/db.ini");
+    let configuration = Configuration::Configuration("config.ini");
+    let database = Database::DatabaseX("/var/lib/aawireless/db.ini");
     let tcpWrapper = f1x::aasdk::tcp::TCPWrapper;
     let usbWrapper = f1x::aasdk::usb::USBWrapper(usbContext);
     let queryFactory = f1x::aasdk::usb::AccessoryModeQueryFactory(usbWrapper, ioService);
     let queryChainFactory = f1x::aasdk::usb::AccessoryModeQueryChainFactory(usbWrapper, ioService, queryFactory);
     let acceptor = boost::asio::ip::tcp::acceptor(ioService, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 5000));
-    let bluetoothService = aawireless::bluetooth::BluetoothService(configuration, database, password);
-    let wifiHotspot = aawireless::wifi::WifiHotspot(ioService, configuration, password);
-    let usbHub: auto = std::make_shared<f1x::aasdk::usb::USBHub>(usbWrapper, ioService, queryChainFactory);
-    let connectionFactory = aawireless::connection::ConnectionFactory(ioService, tcpWrapper, usbWrapper);
+    let bluetoothService = BluetoothService::BluetoothService(configuration, database, password);
+    let wifiHotspot = WifiHotspot::WifiHotspot(ioService, configuration, password);
+    let usbHub = std::make_shared<f1x::aasdk::usb::USBHub>(usbWrapper, ioService, queryChainFactory);
+    let connectionFactory = ConnectionFactory::ConnectionFactory(ioService, tcpWrapper, usbWrapper);
 
-    let btManager: auto = std::make_shared<BluezQt::Manager>();
-    let initJob: auto = btManager.init(); // TODO: refactor to InitManagerJob.start()
+    let btManager = std::make_shared<BluezQt::Manager>();
+    let initJob = btManager.init(); // TODO: refactor to InitManagerJob.start()
     initJob.exec();
     if (initJob.error()) {
         AW_LOG(error) << "Error running bt init job" << initJob.errorText().toStdString();
         return 1;
     }
-    let hfpProxyService = aawireless::bluetooth::HFPProxyService(btManager);
+    let hfpProxyService = HFPProxyService::HFPProxyService(btManager);
 
-    let app: auto = std::make_shared<aawireless::App>(
+    let app = std::make_shared::<aawireless::App::App>(
         ioService,
         usbHub,
         acceptor,
@@ -126,7 +136,7 @@ pub fn main(argc: int, argv: *mut Vec<char>) -> i32 {
     );
     app.start();
 
-    let result: auto = qApplication.exec();
+    let result = qApplication.exec();
 
     app.stop();
 

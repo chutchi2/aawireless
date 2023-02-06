@@ -1,5 +1,6 @@
 use f1x;
 use std;
+use boost;
 
 // #include "ConnectionFactory.h"
 // #include <f1x/aasdk/Transport/SSLWrapper.hpp>
@@ -13,7 +14,7 @@ use std;
 // #include <f1x/aasdk/Transport/USBTransport.hpp>
 // #include <f1x/aasdk/USB/AOAPDevice.hpp>
 
-struct ConnectionFactory {
+pub struct ConnectionFactory {
     ioService: &boost::asio::io_service,
     tcpWrapper: &f1x::aasdk::tcp::TCPWrapper,
     usbWrapper: &f1x::aasdk::usb::USBWrapper,
@@ -32,7 +33,7 @@ impl ConnectionFactory {
     }
     
     pub fn create(&self, deviceHandle: f1x::aasdk::usb::DeviceHandle) -> std::shared_ptr<Connection> {
-        let aoapDevice = (f1x::aasdk::usb::AOAPDevice::create(usbWrapper, ioService, deviceHandle));
+        let aoapDevice = (f1x::aasdk::usb::AOAPDevice::create(self.usbWrapper, self.ioService, deviceHandle));
         let transport = (std::make_shared<f1x::aasdk::transport::USBTransport>(ioService, std::move(aoapDevice)));
         return create(std::move(transport));
     }
@@ -40,7 +41,7 @@ impl ConnectionFactory {
     pub fn create(&self, socket: std::shared_ptr<boost::asio::ip::tcp::socket>) -> std::shared_ptr<Connection> {
         let endpoint = (std::make_shared<f1x::aasdk::tcp::TCPEndpoint>(tcpWrapper, std::move(socket)));
         let transport = (std::make_shared<f1x::aasdk::transport::TCPTransport>(ioService, std::move(endpoint)));
-        return create(std::move(transport));
+        return self.create(std::move(transport));
     }
     
     pub fn create(&self, transport: std::shared_ptr<f1x::aasdk::transport::ITransport>) -> std::shared_ptr<Connection> {

@@ -9,6 +9,7 @@
 // #include <bluetooth/rfcomm.h>
 // #include <aawireless/log/Log.h>
 use std::vec;
+
 enum SocketState {
     UnconnectedState = QAbstractSocket::UnconnectedState,
     ServiceLookupState = QAbstractSocket::HostLookupState,
@@ -39,7 +40,7 @@ enum Security {
     Secure = 0x08
 }
 
-struct BluetoothSocket {
+pub struct BluetoothSocket {
     buffer: QPrivateLinearBuffer,
     txBuffer: QPrivateLinearBuffer,
     secFlags: Security,
@@ -58,9 +59,11 @@ impl BluetoothSocket {
         connect(connectWriteNotifier.get(), SIGNAL(activated(int)), this, SLOT(writeNotify));
         connectWriteNotifier.setEnabled(false);
         readNotifier.setEnabled(false);
-        self.secFlags = Authorization;
-        self.socketError = NoSocketError;
-        self.state = UnconnectedState;
+        return Self {
+            secFlags: Security::Authorization,
+            socketError: Security::NoSocketError,
+            state: Security::UnconnectedState,
+        };
     }
     
     
@@ -88,72 +91,72 @@ impl BluetoothSocket {
     //  }
     
     pub fn writeNotify(&self) {
-        if (state == ConnectingState) {
+        if (self.state == SocketState::ConnectingState) {
             let errorno;
             let len;
             len = sizeof(errorno);
-            ::getsockopt(socket, SOL_SOCKET, SO_ERROR, &errorno, &len as *mut socklen_t);
+            ::getsockopt(self.socket, SOL_SOCKET, SO_ERROR, &errorno, &len as *mut socklen_t);
             if (errorno) {
                 AW_LOG(error) << "Could not complete connection to socket " << qt_error_string(errorno).toStdString();
-                setSocketError(UnknownSocketError);
+                self.setSocketError(SocketError::UnknownSocketError);
                 return;
             }
     
-            setSocketState(ConnectedState);
+            self.setSocketState(SocketState::ConnectedState);
     
-            connectWriteNotifier.setEnabled(false);
+            self.connectWriteNotifier.setEnabled(false);
         } else {
-            if (txBuffer.size() == 0) {
-                connectWriteNotifier.setEnabled(false);
+            if (self.txBuffer.size() == 0) {
+                self.connectWriteNotifier.setEnabled(false);
                 return;
             }
             let buf: Vec<i32> = vec![];
     
-            let size: i32 = txBuffer.read(buf, 1024);
+            let size: i32 = self.txBuffer.read(buf, 1024);
             //TODO: int writtenBytes = qt_safe_write(socket, buf, size);
             let mut writtenBytes: i32 = 0;
             if (writtenBytes < 0) {
-                match errno{
+                match errno {
                     EAGAIN => {
                             writtenBytes = 0;
-                            txBuffer.ungetBlock(buf, size);
+                            self.txBuffer.ungetBlock(buf, size);
                         }
                     _ =>
                         // every other case returns error
-                        setSocketError(NetworkError),
+                        self.setSocketError(SocketError::NetworkError),
                 }
             } else {
                 if (writtenBytes < size) {
                     // add remainder back to buffer
-                    char *remainder = buf + writtenBytes;
-                    txBuffer.ungetBlock(remainder, size - writtenBytes);
+                    let remainder: *mut char = buf + writtenBytes;
+                    self.txBuffer.ungetBlock(remainder, size - writtenBytes);
                 }
             }
     
-            if (txBuffer.size()) {
-                connectWriteNotifier.setEnabled(true);
-            } else if (state == ClosingState) {
-                connectWriteNotifier.setEnabled(false);
-                close();
+            if (self.txBuffer.size()) {
+                self.connectWriteNotifier.setEnabled(true);
+            } else if (self.state == SocketState::ClosingState) {
+                self.connectWriteNotifier.setEnabled(false);
+                self.close();
             }
         }
     }
     
     pub fn readNotify(&self) {
-        char *writePointer = buffer.reserve(QPRIVATELINEARBUFFER_BUFFERSIZE);
+        let writePointer: *mut char = self.buffer.reserve(QPRIVATELINEARBUFFER_BUFFERSIZE);
         let readFromDevice: i32 = ::read(socket, writePointer, QPRIVATELINEARBUFFER_BUFFERSIZE);
-        buffer.chop(QPRIVATELINEARBUFFER_BUFFERSIZE - (if readFromDevice < 0 { 0 } else { readFromDevice }));
+        self.buffer.chop(QPRIVATELINEARBUFFER_BUFFERSIZE - (if readFromDevice < 0 { 0 } else { readFromDevice }));
         if (readFromDevice <= 0) {
             let errsv: i32 = errno;
-            readNotifier.setEnabled(false);
-            connectWriteNotifier.setEnabled(false);
+            self.readNotifier.setEnabled(false);
+            self.connectWriteNotifier.setEnabled(false);
             AW_LOG(error) << "Could not read from device " << qt_error_string(errsv).toStdString();
             if (errsv == EHOSTDOWN){
-                setSocketError(HostNotFoundError);
+                self.setSocketError(SocketError::HostNotFoundError);
             }else if (errsv == ECONNRESET){
-                setSocketError(RemoteHostClosedError);
+                self.setSocketError(SocketError::RemoteHostClosedError);
             }else{
-                setSocketError(UnknownSocketError);
+                self.setSocketError(SocketError::UnknownSocketError);
             }
         } else {
             emit readyRead();
@@ -161,50 +164,50 @@ impl BluetoothSocket {
     }
     
     pub fn abort(&self) {
-        readNotifier = nullptr;
-        connectWriteNotifier = nullptr;
+        self.readNotifier = std::ptr::null();
+        self.connectWriteNotifier = std::ptr::null();
     
         // We don't transition through Closing for abort, so
         // we don't call disconnectFromService or
         // Qclose
-        QT_CLOSE(socket);
-        socket = -1;
+        QT_CLOSE(self.socket);
+        self.socket = -1;
     
-        setSocketState(UnconnectedState);
-        emit disconnected();
+        self.setSocketState(SocketState::UnconnectedState);
+        emit self.disconnected();
     }
     
     pub fn writeData(&self, data: *mut char, maxSize: qint64) -> qint64 {
-        if (state != ConnectedState) {
+        if (self.state != SocketState::ConnectedState) {
             AW_LOG(error) << "Cannot write while not connected";
-            setSocketError(OperationError);
+            self.setSocketError(SocketError::OperationError);
             return -1;
         }
     
-        if (!connectWriteNotifier){
+        if (!self.connectWriteNotifier){
             return -1;
         }
     
-        if (txBuffer.size() == 0) {
-            connectWriteNotifier.setEnabled(true);
+        if (self.txBuffer.size() == 0) {
+            self.connectWriteNotifier.setEnabled(true);
             QMetaObject::invokeMethod(this, "writeNotify", Qt::QueuedConnection);
         }
     
-        char *txbuf = txBuffer.reserve(maxSize);
-        memcpy(txbuf, data, maxSize);
+        let txbuf: *mut char = self.txBuffer.reserve(maxSize);
+        std::memcpy(txbuf, data, maxSize);
     
         return maxSize;
     }
     
     pub fn readData(&self, data: *mut char, maxSize: qint64) -> qint64 {
-        if (state != ConnectedState) {
+        if (self.state != SocketState::ConnectedState) {
             AW_LOG(error) << "Cannot read while not connected";
-            setSocketError(OperationError);
+            self.setSocketError(SocketError::OperationError);
             return -1;
         }
     
-        if (!buffer.isEmpty()) {
-            let i: i32 = buffer.read(data, maxSize);
+        if (!self.buffer.isEmpty()) {
+            let i: i32 = self.buffer.read(data, maxSize);
             return i;
         }
     
@@ -212,27 +215,27 @@ impl BluetoothSocket {
     }
     
     pub fn close(&self) {
-        if (txBuffer.size() > 0){
-            connectWriteNotifier.setEnabled(true);
+        if (self.txBuffer.size() > 0){
+            self.connectWriteNotifier.setEnabled(true);
         }
         else{
-            abort();
+            self.abort();
         }
     }
     
     pub fn setSocketError(&self, _error: SocketError) {
-        socketError = _error;
-        emit error(socketError);
+        self.socketError = _error;
+        emit self.error(socketError);
     }
     
     pub fn setSocketState(&self, _state: SocketState) {
-        let old: auto = state;
+        let old = self.state;
         if (_state == old){
             return;
         }
-        state = _state;
+        self.state = _state;
     
-        emit stateChanged(state);
+        emit self.stateChanged(state);
         if (state == ConnectedState) {
             emit connected();
         } else if ((old == ConnectedState || old == ClosingState) && state == UnconnectedState) {
@@ -248,7 +251,7 @@ impl BluetoothSocket {
     }
     
     // inline convertAddress
-    pub fn convertAddress(&self, address: std::string, out: bdaddr_t) {
+    pub fn convertAddress(&self, address: String, out: bdaddr_t) {
         let src_addr: *mut char = address.c_str();
     
         /* don't use ba2str to apub fn -lbluetooth */
@@ -256,7 +259,7 @@ impl BluetoothSocket {
         while (i >= 0){
             src_addr += 3;
             i -= 1;
-            out.b[i] = strtol(src_addr, NULL, 16);
+            out.b[i] = std::strtol(src_addr, std::ptr::null(), 16);
         }
         // let mut i = 5;
         // while (i >= 0){
@@ -266,33 +269,33 @@ impl BluetoothSocket {
         // }
     }
     
-    pub fn connectRfcomm(&self, address: std::string, channel: u8) {
+    pub fn connectRfcomm(&self, address: String, channel: u8) {
         impl addr for sockaddr_rc{};
-        memset(&addr, 0, sizeof(addr));
+        std::memset(&addr, 0, std::sizeof(addr));
         addr.rc_family = AF_BLUETOOTH;
         addr.rc_channel = channel;
-        convertAddress(address, addr.rc_bdaddr);
+        self.convertAddress(address, addr.rc_bdaddr);
     
-        socket = ::socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
+        self.socket = ::socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
     
-        connectWriteNotifier.setEnabled(true);
-        readNotifier.setEnabled(true);
+        self.connectWriteNotifier.setEnabled(true);
+        self.readNotifier.setEnabled(true);
     
-        let result: u32 = ::connect(socket, &addr as sockaddr, sizeof(addr));
+        let result: u32 = ::connect(self.socket, &addr as sockaddr, std::sizeof(addr));
     
         if (result >= 0 || (result == -1 && errno == EINPROGRESS)) {
-            setSocketState(ConnectingState);
+            self.setSocketState(SocketState::ConnectingState);
         } else {
             AW_LOG(error) << "Could not open socket " << qt_error_string(errno).toStdString();
-            setSocketError(UnknownSocketError);
+            self.setSocketError(SocketError::UnknownSocketError);
         }
     }
     
-    pub fn connectSCO(&self, address: std::string) {
+    pub fn connectSCO(&self, address: String) {
         impl addr for sockaddr_sco{};
-        memset(&addr, 0, sizeof(addr));
+        std::memset(&addr, 0, std::sizeof(addr));
         addr.sco_family = AF_BLUETOOTH;
-        convertAddress(address, addr.sco_bdaddr);
+        self.convertAddress(address, addr.sco_bdaddr);
     
         socket = ::socket(AF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_SCO);
     
@@ -302,10 +305,10 @@ impl BluetoothSocket {
         let result: i32 = ::connect(socket, &addr as sockaddr, sizeof(addr));
     
         if (result >= 0 || (result == -1 && errno == EINPROGRESS)) {
-            setSocketState(ConnectingState);
+            self.setSocketState(SocketState::ConnectingState);
         } else {
             AW_LOG(error) << "Could not open socket " << qt_error_string(errno).toStdString();
-            setSocketError(UnknownSocketError);
+            self.setSocketError(SocketError::UnknownSocketError);
         }
     }
 }

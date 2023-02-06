@@ -12,28 +12,38 @@
 // #include <BluetoothPairingResponseMessage.pb.h>
 // #include <ServiceDiscoveryResponseMessage.pb.h>
 // #include <ServiceDiscoveryRequestMessage.pb.h>
-struct App {
+
+use std::{ptr};
+use boost;
+use f1x;
+use crate::aawireless::bluetooth::*;
+use crate::aawireless::connection::*;
+use crate::aawireless::configuration::*;
+use crate::aawireless::wifi::*;
+
+pub struct App {
     ioService: &boost::asio::io_service,
     strand: boost::asio::io_service::strand,
     usbHub: f1x::aasdk::usb::IUSBHub::Pointer,
     acceptor: &boost::asio::ip::tcp::acceptor,
-    wifiHotspot: &aawireless::wifi::WifiHotspot,
-    bluetoothService: &aawireless::bluetooth::BluetoothService,
-    hfpProxyService: &aawireless::bluetooth::HFPProxyService,
-    connectionFactory: &aawireless::connection::ConnectionFactory,
-    configuration: &configuration::Configuration,
-    usbConnection: std::shared_ptr<aawireless::connection::Connection>,
-    socketConnection: std::shared_ptr<aawireless::connection::Connection>,
+    wifiHotspot: &WifiHotspot::WifiHotspot,
+    bluetoothService: BluetoothService::BluetoothService,
+    hfpProxyService: HFPProxyService::HFPProxyService,
+    connectionFactory: &ConnectionFactory::ConnectionFactory,
+    configuration: &Configuration::Configuration,
+    usbConnection: std::shared_ptr<Connection::Connection>,
+    socketConnection: std::shared_ptr<Connection::Connection>,
+    active: bool,
 }
 impl App {
     pub fn new(&ioService: boost::asio::io_service,
         usbHub: f1x::aasdk::usb::IUSBHub::Pointer,
         &acceptor: boost::asio::ip::tcp::acceptor,
-        &wifiHotspot: wifi::WifiHotspot,
-        &bluetoothService: bluetooth::BluetoothService,
-        &hfpProxyService: bluetooth::HFPProxyService,
-        &connectionFactory: connection::ConnectionFactory,
-        &configuration: configuration::Configuration
+        &wifiHotspot: WifiHotspot::WifiHotspot,
+        &bluetoothService: BluetoothService::BluetoothService,
+        &hfpProxyService: HFPProxyService::HFPProxyService,
+        &connectionFactory: ConnectionFactory::ConnectionFactory,
+        &configuration: Configuration::Configuration
     ) -> Self {
         Self {
             ioService: ioService,
@@ -44,26 +54,29 @@ impl App {
             bluetoothService: bluetoothService,
             hfpProxyService: hfpProxyService,
             connectionFactory: connectionFactory,
-            configuration: configuration
+            configuration: configuration,
+            usbConnection: {},
+            socketConnection: {},
+            active: true
         }
     }
     
-    pub fn start() {
-        hfpProxyService.start();
-        wifiHotspot.start();
-        bluetoothService.start();
-        strand.dispatch([this, self = this.shared_from_this()]() {
+    pub fn start(&self) {
+        self.hfpProxyService.start();
+        self.wifiHotspot.start();
+        self.bluetoothService.start();
+        self.strand.dispatch([this, self = this.shared_from_this()]() {
             AW_LOG(info) << "Starting";
     
-            let promise: auto = f1x::aasdk::usb::IUSBHub::Promise::defer(strand);
-            promise.then(std::bind(&onUSBDeviceConnected, this.shared_from_this(), std::placeholders::_1), std::bind(&onUSBError, this.shared_from_this(), std::placeholders::_1));
-            usbHub.start(std::move(promise));
-            startServerSocket();
+            let promise = f1x::aasdk::usb::IUSBHub::Promise::defer(self.strand);
+            promise.then(std::bind(&self.onUSBDeviceConnected, this.shared_from_this(), std::placeholders::_1), std::bind(&self.onUSBError, this.shared_from_this(), std::placeholders::_1));
+            self.usbHub.start(std::move(promise));
+            self.startServerSocket();
         });
     }
     
-    pub fn stop() {
-        strand.dispatch([this, self = this.shared_from_this()]() {
+    pub fn stop(&self) {
+        self.strand.dispatch([this, self = this.shared_from_this()]() {
             try {
                 //TODO: better cleanup
                 cleanup();
@@ -78,47 +91,45 @@ impl App {
     
     }
     
-    pub fn startServerSocket() {
-        strand.dispatch([this, self = this.shared_from_this()]() {
+    pub fn startServerSocket(&self) {
+        self.strand.dispatch([this, self = this.shared_from_this()]() {
             AW_LOG(info) << "Listening for WIFI clients on port 5000";
-            let socket: auto = std::make_shared<boost::asio::ip::tcp::socket>(ioService);
-            acceptor.async_accept(
+            let socket = std::make_shared<boost::asio::ip::tcp::socket>(ioService);
+            self.acceptor.async_accept(
                     *socket,
-                    std::bind(&onNewSocket, this, socket, std::placeholders::_1)
+                    std::bind(&self.onNewSocket, this, socket, std::placeholders::_1)
             );
         });
     }
     
-    pub fn onNewSocket(socket: std::shared_ptr<boost::asio::ip::tcp::socket>, &err: boost::system::error_code ) {
-        strand.dispatch([this, self = this.shared_from_this(), socket, err]() {
+    pub fn onNewSocket(&self, socket: std::shared_ptr<boost::asio::ip::tcp::socket>, &err: boost::system::error_code ) {
+        self.strand.dispatch([this, self = this.shared_from_this(), socket, err]() {
             if (!err) {
                 AW_LOG(info) << "WIFI Client connected";
-                socketConnection = connectionFactory.create(std::move(socket));
-                tryStartProxy();
+                self.socketConnection = self.connectionFactory.create(std::move(socket));
+                self.tryStartProxy();
             } else {
                 AW_LOG(error) << "Socket connection error: " << err;
             }
         });
     }
     
-    pub fn tryStartProxy() {
-        if (usbConnection != nullptr && socketConnection != nullptr) {
-            let active = true;
-    
+    pub fn tryStartProxy(&self, ) {
+        if (self.usbConnection != ptr::null() && self.socketConnection != ptr::null()) {    
             //TODO: start error handling
-            usbConnection.start();
-            socketConnection.start();
+            self.usbConnection.start();
+            self.socketConnection.start();
     
-            startUSBReceive();
-            startTCPReceive();
+            self.startUSBReceive();
+            self.startTCPReceive();
         }
     
     }
     
-    pub fn onUSBReceive(message: f1x::aasdk::messenger::Message::Pointer) {
-        if (active) {
-            let promise: auto = f1x::aasdk::messenger::SendPromise::defer(strand);
-            promise.then([]() {}, std::bind(&onError, this.shared_from_this(), std::placeholders::_1));
+    pub fn onUSBReceive(&self, message: f1x::aasdk::messenger::Message::Pointer) {
+        if (self.active) {
+            let promise = f1x::aasdk::messenger::SendPromise::defer(self.strand);
+            promise.then([]() {}, std::bind(&self.onError, this.shared_from_this(), std::placeholders::_1));
     
             if (message.getChannelId() == f1x::aasdk::messenger::ChannelId::CONTROL) {
                 let messageId = f1x::aasdk::messenger::MessageId(message.getPayload());
@@ -129,30 +140,30 @@ impl App {
     
                     for channel in response.mutable_channels() {
                         if (channel.channel_id() == static_cast<uint32_t>(f1x::aasdk::messenger::ChannelId::BLUETOOTH)) {
-                            f1x::aasdk::proto::data::BluetoothChannel *bluetoothChannel = channel.mutable_bluetooth_channel();
-                            bluetoothChannel.set_adapter_address(bluetoothService.getAddress()); //TODO: set address
-                            bluetoothChannel.clear_supported_pairing_methods();
-                            bluetoothChannel.add_supported_pairing_methods(f1x::aasdk::proto::enums::BluetoothPairingMethod_Enum_HFP);
-                            bluetoothChannel.add_supported_pairing_methods(f1x::aasdk::proto::enums::BluetoothPairingMethod_Enum_A2DP);
+                            f1x::aasdk::proto::data::BluetoothChannel *self.bluetoothChannel = channel.mutable_bluetooth_channel();
+                            self.bluetoothChannel.set_adapter_address(self.bluetoothService.getAddress()); //TODO: set address
+                            self.bluetoothChannel.clear_supported_pairing_methods();
+                            self.bluetoothChannel.add_supported_pairing_methods(f1x::aasdk::proto::enums::BluetoothPairingMethod_Enum_HFP);
+                            self.bluetoothChannel.add_supported_pairing_methods(f1x::aasdk::proto::enums::BluetoothPairingMethod_Enum_A2DP);
                         }
                     }
     
-                    socketConnection.send(message, promise);
-                    startUSBReceive();
+                    self.socketConnection.send(message, promise);
+                    self.startUSBReceive();
                     return;
                 }
             }
     
             //TODO: handle messages
-            socketConnection.send(message, promise);
-            startUSBReceive();
+            self.socketConnection.send(message, promise);
+            self.startUSBReceive();
         }
     }
     
-    pub fn onTCPReceive(message: f1x::aasdk::messenger::Message::Pointer) {
-        if (active) {
-            let promise: auto = f1x::aasdk::messenger::SendPromise::defer(strand);
-            promise.then([]() {}, std::bind(&onError, this.shared_from_this(), std::placeholders::_1));
+    pub fn onTCPReceive(&self, message: f1x::aasdk::messenger::Message::Pointer) {
+        if (self.active) {
+            let promise = f1x::aasdk::messenger::SendPromise::defer(self.strand);
+            promise.then([]() {}, std::bind(&self.onError, this.shared_from_this(), std::placeholders::_1));
     
             if (message.getChannelId() == f1x::aasdk::messenger::ChannelId::BLUETOOTH) {
                 let messageId = f1x::aasdk::messenger::MessageId(message.getPayload());
@@ -170,54 +181,54 @@ impl App {
                             f1x::aasdk::proto::ids::BluetoothChannelMessage::PAIRING_RESPONSE).getData());
                     msg.insertPayload(response);
     
-                    socketConnection.send(std::move(msg), std::move(promise));
-                    startTCPReceive();
+                    self.socketConnection.send(std::move(msg), std::move(promise));
+                    self.startTCPReceive();
                     return;
                 }
             }
     
-            usbConnection.send(std::move(message), std::move(promise));
-            startTCPReceive();
+            self.usbConnection.send(std::move(message), std::move(promise));
+            self.startTCPReceive();
         }
     }
     
-    pub fn startUSBReceive() {
-        let receivePromise: auto = f1x::aasdk::messenger::ReceivePromise::defer(strand);
-        receivePromise.then(std::bind(&onUSBReceive, this.shared_from_this(), std::placeholders::_1),
-                                std::bind(&onError, this.shared_from_this(), std::placeholders::_1));
-        usbConnection.receive(receivePromise);
+    pub fn startUSBReceive(&self) {
+        let receivePromise = f1x::aasdk::messenger::ReceivePromise::defer(self.strand);
+        receivePromise.then(std::bind(&self.onUSBReceive, this.shared_from_this(), std::placeholders::_1),
+                                std::bind(&self.onError, this.shared_from_this(), std::placeholders::_1));
+        self.usbConnection.receive(receivePromise);
     }
     
-    pub fn startTCPReceive() {
-        let receivePromise: auto = f1x::aasdk::messenger::ReceivePromise::defer(strand);
-        receivePromise.then(std::bind(&onTCPReceive, this.shared_from_this(), std::placeholders::_1),
-                                std::bind(&onError, this.shared_from_this(), std::placeholders::_1));
-        socketConnection.receive(receivePromise);
+    pub fn startTCPReceive(&self) {
+        let receivePromise = f1x::aasdk::messenger::ReceivePromise::defer(self.strand);
+        receivePromise.then(std::bind(&self.onTCPReceive, this.shared_from_this(), std::placeholders::_1),
+                                std::bind(&self.onError, this.shared_from_this(), std::placeholders::_1));
+        self.socketConnection.receive(receivePromise);
     }
     
-    pub fn onError(&error: f1x::aasdk::error::Error) {
-        cleanup();
+    pub fn onError(&self, &error: f1x::aasdk::error::Error) {
+        self.cleanup();
         AW_LOG(error) << "Connection error: " << error.getNativeCode();
     }
     
-    pub fn cleanup() {
-        let active = false;
-        if (usbConnection != nullptr) {
-            usbConnection.stop();
-            usbConnection = nullptr;
+    pub fn cleanup(&self) {
+        self.active = false;
+        if (self.usbConnection != ptr::null()) {
+            self.usbConnection.stop();
+            self.usbConnection = ptr::null();
         }
-        if (socketConnection != nullptr) {
-            socketConnection.stop();
-            socketConnection = nullptr;
+        if (self.socketConnection != ptr::null()) {
+            self.socketConnection.stop();
+            self.socketConnection = ptr::null();
         }
     }
     
-    pub fn onUSBDeviceConnected(deviceHandle: f1x::aasdk::usb::DeviceHandle) {
-        let usbConnection = connectionFactory.create(deviceHandle);
-        tryStartProxy();
+    pub fn onUSBDeviceConnected(&self, deviceHandle: f1x::aasdk::usb::DeviceHandle) {
+        let usbConnection = self.connectionFactory.create(deviceHandle);
+        self.tryStartProxy();
     }
     
-    pub fn onUSBError(&error: f1x::aasdk::error::Error) {
+    pub fn onUSBError(&self, &error: f1x::aasdk::error::Error) {
         AW_LOG(error) << "usb hub error: " << error.what();
     
         if (error != f1x::aasdk::error::ErrorCode::OPERATION_ABORTED &&
