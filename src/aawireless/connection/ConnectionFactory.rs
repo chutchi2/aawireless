@@ -1,6 +1,7 @@
 use f1x;
-use std;
 use boost;
+use std;
+use crate::aawireless::connection::Connection::Connection
 
 // #include "ConnectionFactory.h"
 // #include <f1x/aasdk/Transport/SSLWrapper.hpp>
@@ -32,19 +33,19 @@ impl ConnectionFactory {
         }
     }
     
-    pub fn create(&self, deviceHandle: f1x::aasdk::usb::DeviceHandle) -> std::shared_ptr<Connection> {
+    pub fn create(&self, deviceHandle: f1x::aasdk::usb::DeviceHandle) -> Box<Connection> {
         let aoapDevice = (f1x::aasdk::usb::AOAPDevice::create(self.usbWrapper, self.ioService, deviceHandle));
         let transport = (std::make_shared<f1x::aasdk::transport::USBTransport>(ioService, std::move(aoapDevice)));
-        return create(std::move(transport));
+        return self.create(std::move(transport));
     }
     
-    pub fn create(&self, socket: std::shared_ptr<boost::asio::ip::tcp::socket>) -> std::shared_ptr<Connection> {
+    pub fn create(&self, socket: Box<boost::asio::ip::tcp::socket>) -> Box<Connection> {
         let endpoint = (std::make_shared<f1x::aasdk::tcp::TCPEndpoint>(tcpWrapper, std::move(socket)));
         let transport = (std::make_shared<f1x::aasdk::transport::TCPTransport>(ioService, std::move(endpoint)));
         return self.create(std::move(transport));
     }
     
-    pub fn create(&self, transport: std::shared_ptr<f1x::aasdk::transport::ITransport>) -> std::shared_ptr<Connection> {
+    pub fn create(&self, transport: Box<f1x::aasdk::transport::ITransport>) -> Box<Connection> {
         let sslWrapper = (std::make_shared<f1x::aasdk::transport::SSLWrapper>());
         let cryptor = (std::make_shared<f1x::aasdk::messenger::Cryptor>(std::move(sslWrapper)));
     

@@ -14,9 +14,12 @@
 // #include <BluezQt/Device>
 // #include <BluezQt/Adapter>
 
-struct HFPProxyProfile {
-    rfcommSocket: QSharedPointer<QLocalSocket>,
-    scoSocketServer: QSharedPointer<QLocalServer>,
+use BluezQt;
+use qt_core::{QPtr, QString};
+
+pub struct HFPProxyProfile {
+    rfcommSocket: QPtr<QLocalSocket>,
+    scoSocketServer: QPtr<QLocalServer>,
     scoSocket: *mut QLocalSocket,
 }
 
@@ -43,7 +46,7 @@ impl HFPProxyProfile {
         if (self.rfcommSocket) {self.rfcommSocket.close();}
         if (self.scoSocketServer) {self.scoSocketServer.close();}
     
-        self.rfcommSocket = createSocket(fd);
+        self.rfcommSocket = self.createSocket(fd);
         if (!self.rfcommSocket.isValid()) {
             request.cancel();
             AW_LOG(error) << "HFP profile rfcomm socket invalid!";
@@ -51,9 +54,9 @@ impl HFPProxyProfile {
         }
     
         AW_LOG(info) << "Listening for SCO connections";
-        let adapterAddress: auto = device.adapter().address();
-        let scoFd: i32 = createSCOSocket(adapterAddress);
-        self.scoSocketServer = QSharedPointer<QLocalServer>(QLocalServer);
+        let adapterAddress = device.adapter().address();
+        let scoFd: i32 = self.createSCOSocket(adapterAddress);
+        self.scoSocketServer = QPtr<QLocalServer>(QLocalServer);
         self.scoSocketServer.connect(self.scoSocketServer.data(), &QLocalServer::newConnection, this, &self.scoNewConnection);
     
         if (!self.scoSocketServer.listen(scoFd)) {
@@ -142,7 +145,7 @@ impl HFPProxyProfile {
         while (i >= 0){
             src_addr += 3;
             i -= 1;
-            src.b[i] = std::strtol(src_addr, NULL, 16);
+            src.b[i] = std::strtol(src_addr, std::ptr::null(), 16);
         }
         /* Bind to local address */
         impl addr for sockaddr_sco {};

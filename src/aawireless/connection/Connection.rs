@@ -9,19 +9,19 @@ use f1x;
 pub struct Connection {
     receiveStrand: boost::asio::io_service::strand,
     sendStrand: boost::asio::io_service::strand,
-    cryptor: std::shared_ptr<f1x::aasdk::messenger::ICryptor>,
-    transport: std::shared_ptr<f1x::aasdk::transport::ITransport>,
-    inStream: std::shared_ptr<f1x::aasdk::messenger::IMessageInStream>,
-    outStream: std::shared_ptr<f1x::aasdk::messenger::IMessageOutStream>,
+    cryptor: Box<f1x::aasdk::messenger::ICryptor>,
+    transport: Box<f1x::aasdk::transport::ITransport>,
+    inStream: Box<f1x::aasdk::messenger::IMessageInStream>,
+    outStream: Box<f1x::aasdk::messenger::IMessageOutStream>,
     active: bool,
 }
 impl Connection {
     pub fn new(&self,
         ioService: &boost::asio::io_context,
-        cryptor: std::shared_ptr<f1x::aasdk::messenger::ICryptor>,
-        transport: std::shared_ptr<f1x::aasdk::transport::ITransport>,
-        inStream: std::shared_ptr<f1x::aasdk::messenger::IMessageInStream>,
-        outStream: std::shared_ptr<f1x::aasdk::messenger::IMessageOutStream>,) -> Self {
+        cryptor: Box<f1x::aasdk::messenger::ICryptor>,
+        transport: Box<f1x::aasdk::transport::ITransport>,
+        inStream: Box<f1x::aasdk::messenger::IMessageInStream>,
+        outStream: Box<f1x::aasdk::messenger::IMessageOutStream>,) -> Self {
             Self {
                 receiveStrand: ioService,
                 sendStrand: ioService,
@@ -107,7 +107,7 @@ impl Connection {
                                                         messageId.getSizeOf());
     
             if (messageId.getId() == f1x::aasdk::proto::ids::ControlMessage::SSL_HANDSHAKE) {
-                let innerPromise: auto = f1x::aasdk::io::Promise<void>::defer(receiveStrand);
+                let innerPromise = f1x::aasdk::io::Promise<void>::defer(receiveStrand);
                 innerPromise.then(
                         [this, self = this.shared_from_this(), promise]() {
                             self.inStream.startReceive(std::move(promise));

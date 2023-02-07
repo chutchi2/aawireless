@@ -1,4 +1,15 @@
+// #include <string>
+// #include <aawireless/configuration/Configuration.h>
+// #include <boost/asio/io_context.hpp>
+// #include <NetworkManagerQt/Manager>
+// #include <NetworkManagerQt/WirelessDevice>
+// #include <NetworkManagerQt/WirelessSetting>
+// #include <NetworkManagerQt/Device>
+// #include <NetworkManagerQt/Ipv4Setting>
+// #include <NetworkManagerQt/WirelessSecuritySetting>
+// #include <QUuid>
 use std::{self, ptr::null};
+use qt_core::{QString, QUuid};
 use crate::aawireless::configuration::*;
 
 pub struct WifiHotspot {
@@ -32,7 +43,7 @@ impl WifiHotspot {
         if (!self.configuration.wifiDevice.empty()) {
             for dev in deviceList {
                 if (dev.type() == Device::Wifi && dev.interfaceName() == deviceName) {
-                    wifiDevice = qobject_cast<WirelessDevice *>(dev);
+                    wifiDevice = qobject_cast<*mut WirelessDevice>(dev);
                     break;
                 }
             }
@@ -80,7 +91,7 @@ impl WifiHotspot {
         wirelessSetting.setInitialized(true);
     
         // We try to add and activate our new wireless connection
-        let reply = NetworkManager::addAndActivateConnection(settings.toMap(), wifiDevice.uni(), QString());
+        let reply = NetworkManager::addAndActivateConnection(settings.toMap(), wifiDevice.uni(), QString{_unused: null()});
         reply.waitForFinished();
         if (reply.isValid()) {
             AW_LOG(info) << "Created wifi hotspot";

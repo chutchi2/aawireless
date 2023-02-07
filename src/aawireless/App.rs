@@ -31,8 +31,8 @@ pub struct App {
     hfpProxyService: HFPProxyService::HFPProxyService,
     connectionFactory: &ConnectionFactory::ConnectionFactory,
     configuration: &Configuration::Configuration,
-    usbConnection: std::shared_ptr<Connection::Connection>,
-    socketConnection: std::shared_ptr<Connection::Connection>,
+    usbConnection: Box<Connection::Connection>,
+    socketConnection: Box<Connection::Connection>,
     active: bool,
 }
 impl App {
@@ -102,7 +102,7 @@ impl App {
         });
     }
     
-    pub fn onNewSocket(&self, socket: std::shared_ptr<boost::asio::ip::tcp::socket>, &err: boost::system::error_code ) {
+    pub fn onNewSocket(&self, socket: Box<boost::asio::ip::tcp::socket>, &err: boost::system::error_code ) {
         self.strand.dispatch([this, self = this.shared_from_this(), socket, err]() {
             if (!err) {
                 AW_LOG(info) << "WIFI Client connected";
@@ -139,7 +139,7 @@ impl App {
                     response.ParseFromArray(payload.cdata, payload.size);
     
                     for channel in response.mutable_channels() {
-                        if (channel.channel_id() == static_cast<uint32_t>(f1x::aasdk::messenger::ChannelId::BLUETOOTH)) {
+                        if (channel.channel_id() == static_cast<u32>(f1x::aasdk::messenger::ChannelId::BLUETOOTH)) {
                             f1x::aasdk::proto::data::BluetoothChannel *self.bluetoothChannel = channel.mutable_bluetooth_channel();
                             self.bluetoothChannel.set_adapter_address(self.bluetoothService.getAddress()); //TODO: set address
                             self.bluetoothChannel.clear_supported_pairing_methods();

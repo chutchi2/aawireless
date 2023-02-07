@@ -59,7 +59,7 @@ pub fn startIOServiceWorkers(&ioService: boost::asio::io_service, threadPool: &V
 
 //TODO: refactor to other location
 pub fn generatePassword() -> std::string::String {
-    let chars = std::string::String(
+    let chars = String(
             "abcdefghijklmnopqrstuvwxyz",
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "1234567890",

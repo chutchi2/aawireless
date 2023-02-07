@@ -78,7 +78,7 @@ impl BluetoothService {
         self.database.save();
     
         if (self.socket != std::ptr::null()) {
-            AW_LOG(info) << "[AndroidBluetoothServer] rfcomm client connected, peer name: " << socket.peerName().toStdString();
+            AW_LOG(info) << "[AndroidBluetoothServer] rfcomm client connected, peer name: " << self.socket.peerName().toStdString();
     
             self.connect(socket, &QBluetoothSocket::readyRead, this, &BluetoothService::readSocket);
             //  connect(socket, &QBluetoothSocket::disconnected, this, QOverload<>::of(&ChatServer::clientDisconnected));
@@ -119,11 +119,11 @@ impl BluetoothService {
     
         match messageId {
             1=>
-                self.handleWifiInfoRequest(buffer, length),
+                self.handleWifiInfoRequest(self.buffer, length),
             2=>
-                self.handleWifiSecurityRequest(buffer, length),
+                self.handleWifiSecurityRequest(self.buffer, length),
             7=>
-                self.handleWifiInfoRequestResponse(buffer, length),
+                self.handleWifiInfoRequestResponse(self.buffer, length),
             _=> {
                 let ss: std::stringstream;
                 ss << std::hex << std::setfill('0');
